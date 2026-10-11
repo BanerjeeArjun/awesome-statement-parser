@@ -40,7 +40,7 @@ financial history to someone else. This project does neither:
 **1. Install** (Python 3.11+):
 
 ```bash
-git clone https://github.com/<you>/awesome-statement-parser.git
+git clone https://github.com/BanerjeeArjun/awesome-statement-parser.git
 cd awesome-statement-parser
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
