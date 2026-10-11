@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Statement</title>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak]{display:none!important}
+    .cell{width:100%;background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 4px;font-size:12.5px}
+    .cell:hover{border-color:#cbd5e1}
+    .cell:focus{outline:none;border-color:#6366f1;background:#fff}
+    .num{text-align:right;font-variant-numeric:tabular-nums}
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 h-screen flex flex-col overflow-hidden" x-data="review()" x-init="init()" x-cloak>
+
+  <!-- top bar -->
+  <header class="bg-white border-b border-slate-200 shrink-0">
+    <div class="px-4 h-14 flex items-center gap-3">
+      <a :href="base + '/'" class="text-sm text-slate-500 hover:text-slate-900">← Statements</a>
+      <div class="font-medium truncate" x-text="job.filename"></div>
+      <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="(job.status || '').replace('_', ' ')"></span>
+      <div class="ml-auto flex items-center gap-2" x-show="hasResult">
+        <span class="text-xs text-slate-500 mr-2" x-show="dirty">Unsaved edits</span>
+        <a class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" :href="base + '/api/jobs/' + id + '/export.csv'">CSV</a>
+        <a class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" :href="base + '/api/jobs/' + id + '/export.json'">JSON</a>
+        <button class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" @click="save()" :disabled="!dirty">Save</button>
+        <button class="text-sm px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50" @click="reject()">Reject</button>
+        <button class="text-sm px-4 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700" @click="approve()">Approve</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] min-h-0">
+
+    <!-- LEFT: document preview -->
+    <section class="overflow-auto bg-slate-200/70 p-4 min-h-0" x-ref="preview">
+      <template x-if="kind === 'pdf' && hasResult">
+        <div class="space-y-4 max-w-3xl mx-auto">
+          <template x-for="p in pages" :key="p.number">
+            <div class="relative bg-white shadow-sm" :id="'page-' + p.number">
+              <img :src="base + '/api/jobs/' + id + '/pages/' + p.number + '.png'" class="w-full block" :alt="'Page ' + p.number" loading="lazy">
+              <template x-for="hl in highlightsOn(p)" :key="hl.key">
+                <div class="absolute rounded-sm pointer-events-none" :class="hl.cls"
+                     :style="`left:${hl.x}%;top:${hl.y}%;width:${hl.w}%;height:${hl.h}%`"></div>
+              </template>
+              <div class="absolute bottom-1 right-2 text-[10px] text-slate-400" x-text="'Page ' + p.number"></div>
+            </div>
+          </template>
+        </div>
+      </template>
+      <template x-if="kind === 'grid' && hasResult">
+        <div class="bg-white shadow-sm overflow-auto">
+          <table class="text-xs border-collapse">
+            <template x-for="(row, ri) in job.grid || []" :key="ri">
+              <tr :id="'grid-' + ri" :class="gridRowSelected(ri) ? 'bg-indigo-100' : ''">
+                <td class="px-1 text-slate-400 border-r border-slate-200 select-none" x-text="ri + 1"></td>
+                <template x-for="(c, ci) in row" :key="ci"><td class="px-2 py-0.5 border-b border-slate-100 whitespace-nowrap" x-text="c"></td></template>
+              </tr>
+            </template>
+          </table>
+        </div>
+      </template>
+      <div x-show="!hasResult" class="h-full flex items-center justify-center text-sm text-slate-500">Preview appears once the statement is read.</div>
+    </section>
+
+    <!-- RIGHT: parsed statement -->
+    <section class="overflow-auto bg-white min-h-0 border-l border-slate-200">
+
+      <!-- parsing / password / error states -->
+      <div x-show="['queued','parsing'].includes(job.status)" class="p-10 text-center">
+        <div class="inline-block w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        <p class="mt-4 text-sm text-slate-600">Reading the statement… <span x-text="elapsed + 's'"></span></p>
+        <p class="mt-1 text-xs text-slate-400">A new layout takes one local-model call; layouts seen before skip it.</p>
+      </div>
+      <div x-show="job.status === 'password_required' || (job.status === 'error' && !hasResult)" class="p-8 max-w-md">
+        <p class="text-sm" :class="job.status === 'error' ? 'text-red-700' : 'text-slate-700'" x-text="job.error"></p>
+        <form class="mt-4 flex gap-2" @submit.prevent="sendPassword()">
+          <input type="password" x-model="password" placeholder="Statement password" autocomplete="off"
+                 class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <button class="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm" x-text="job.status === 'error' ? 'Retry' : 'Unlock'"></button>
+        </form>
+      </div>
+
+      <template x-if="hasResult">
+        <div>
+          <!-- verdict -->
+          <div class="px-5 py-4 border-b" :class="verdictStyle().box">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold" :class="verdictStyle().text" x-text="verdictStyle().label"></span>
+              <span class="text-xs text-slate-500" x-show="result.timings" x-text="'· ' + (result.timings?.total ?? '') + 's · layout from ' + (result.spec_source || '').replace('_', ' ')"></span>
+            </div>
+            <p class="text-sm mt-1 text-slate-700" x-text="validation.summary"></p>
+          </div>
+
+          <!-- statement facts -->
+          <div class="px-5 py-4 border-b border-slate-200">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+              <div><div class="text-slate-500">Bank</div><div class="font-medium" x-text="statement.bank_name || '—'"></div></div>
+              <div><div class="text-slate-500">Type</div><div class="font-medium" x-text="statement.statement_type === 'credit_card' ? 'Credit card' : 'Bank account'"></div></div>
+              <div><div class="text-slate-500">Account</div><div class="font-medium" x-text="statement.account_number || '—'"></div></div>
+              <div><div class="text-slate-500">Period</div><div class="font-medium" x-text="statement.period_start ? statement.period_start + ' → ' + statement.period_end : '—'"></div></div>
+              <template x-for="f in moneyFields" :key="f.key">
+                <label class="block"><span class="text-slate-500" x-text="f.label"></span>
+                  <input class="cell num font-medium -mx-1" :value="statement[f.key] ?? ''" placeholder="—" @change="statement[f.key] = $event.target.value.trim() || null; changed()">
+                </label>
+              </template>
+            </div>
+            <div class="mt-3 text-xs text-slate-600 flex flex-wrap gap-x-5 gap-y-1">
+              <span><span x-text="rows.length"></span> transactions</span>
+              <span>Σ debits <b class="tabular-nums" x-text="fmt(totals().dr)"></b></span>
+              <span>Σ credits <b class="tabular-nums" x-text="fmt(totals().cr)"></b></span>
+            </div>
+          </div>
+
+          <!-- checks -->
+          <div class="px-5 py-3 border-b border-slate-200">
+            <button class="text-xs font-semibold text-slate-600" @click="showChecks = !showChecks">
+              <span x-text="showChecks ? '▾' : '▸'"></span> Reconciliation checks
+              <span class="font-normal text-slate-400" x-text="'(' + validation.checks.filter(c => c.status === 'pass').length + '/' + validation.checks.filter(c => c.status !== 'skip').length + ' passed)'"></span>
+            </button>
+            <ul class="mt-2 space-y-1.5" x-show="showChecks">
+              <template x-for="c in validation.checks" :key="c.name">
+                <li class="text-xs flex gap-2">
+                  <span class="shrink-0 w-4 text-center" :class="{pass:'text-emerald-600',fail:'text-red-600',warn:'text-amber-600',skip:'text-slate-400'}[c.status]"
+                        x-text="{pass:'✓',fail:'✕',warn:'!',skip:'–'}[c.status]"></span>
+                  <div class="min-w-0">
+                    <span class="text-slate-700" x-text="c.message"></span>
+                    <template x-if="c.details?.breaks">
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        <template x-for="b in c.details.breaks.slice(0, 12)" :key="b.row + (b.anchor || '')">
+                          <button class="px-1.5 py-0.5 rounded bg-red-50 text-red-700 hover:bg-red-100" @click="select(b.row)" x-text="'row ' + b.row + ' (' + b.difference + ')'"></button>
+                        </template>
+                      </div>
+                    </template>
+                    <template x-if="c.name === 'coverage' && c.details?.lines">
+                      <ul class="mt-1 space-y-1">
+                        <template x-for="u in c.details.lines" :key="u.line_id">
+                          <li class="flex items-center gap-2"><code class="text-[11px] bg-slate-100 px-1 rounded truncate" x-text="'p' + u.page + ': ' + u.text"></code>
+                            <button class="shrink-0 text-indigo-700 hover:underline" @click="resolveLine(u.line_id)">not a transaction</button></li>
+                        </template>
+                      </ul>
+                    </template>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </div>
+
+          <!-- transactions -->
+          <table class="w-full text-xs">
+            <thead class="sticky top-0 bg-slate-50 text-slate-500 z-10">
+              <tr class="border-b border-slate-200">
+                <th class="py-2 pl-3 pr-1 text-left font-medium w-8">#</th>
+                <th class="py-2 px-1 text-left font-medium w-28">Date</th>
+                <th class="py-2 px-1 text-left font-medium">Description</th>
+                <th class="py-2 px-1 text-right font-medium w-24">Debit</th>
+                <th class="py-2 px-1 text-right font-medium w-24">Credit</th>
+                <th class="py-2 px-1 text-right font-medium w-28" x-show="hasBalance">Balance</th>
+                <th class="w-12"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(t, i) in rows" :key="t.id">
+                <tr class="border-b border-slate-100 group" :id="'row-' + t.id" @click="select(t.id)"
+                    :class="[selected === t.id ? 'bg-indigo-50' : (flagged.has(t.id) ? 'bg-red-50' : ''), t.edited ? 'italic' : '']">
+                  <td class="pl-3 pr-1 text-slate-400 tabular-nums" x-text="i + 1"></td>
+                  <td class="px-1"><input type="date" class="cell" :value="t.date || ''" @change="t.date = $event.target.value || null; edit(t)"></td>
+                  <td class="px-1"><input class="cell" :value="t.description" :title="t.description" @change="t.description = $event.target.value; edit(t)"></td>
+                  <td class="px-1"><input class="cell num" inputmode="decimal" :value="t.direction === 'debit' ? t.amount : ''" @change="setAmount(t, 'debit', $event.target.value)"></td>
+                  <td class="px-1"><input class="cell num" inputmode="decimal" :value="t.direction === 'credit' ? t.amount : ''" @change="setAmount(t, 'credit', $event.target.value)"></td>
+                  <td class="px-1" x-show="hasBalance"><input class="cell num" inputmode="decimal" :value="t.balance ?? ''" @change="t.balance = $event.target.value.replace(/,/g, '').trim() || null; edit(t)"></td>
+                  <td class="pr-2 text-right whitespace-nowrap opacity-0 group-hover:opacity-100">
+                    <button title="Insert a row below" class="px-1 text-slate-500 hover:text-indigo-700" @click.stop="insertAfter(i)">＋</button>
+                    <button title="Delete row" class="px-1 text-slate-500 hover:text-red-700" @click.stop="remove(i)">✕</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <div class="p-3"><button class="text-xs text-indigo-700 hover:underline" @click="insertAfter(rows.length - 1)">＋ Add a transaction</button></div>
+        </div>
+      </template>
+    </section>
+  </div>
+
+  <!-- toast -->
+  <div x-show="toast" x-transition class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow" x-text="toast"></div>
+
+<script>
+function review() {
+  const base = location.pathname.split('/review/')[0];
+  const id = location.pathname.split('/review/')[1].replace(/\/$/, '');
+  return {
+    base, id, job: {}, result: null, statement: {}, rows: [], validation: {checks: []}, resolved: [],
+    selected: null, dirty: false, showChecks: true, password: '', elapsed: 0, toast: '', timer: null, vtimer: null,
+    moneyFields: [
+      {key: 'opening_balance', label: 'Opening balance'}, {key: 'closing_balance', label: 'Closing balance'},
+      {key: 'total_debits', label: 'Printed debits'}, {key: 'total_credits', label: 'Printed credits'},
+    ],
+    get hasResult() { return !!this.result && this.result.transactions !== undefined; },
+    get kind() { return this.result?.document_kind; },
+    get pages() { return this.result?.pages || []; },
+    get hasBalance() { return this.rows.some(t => t.balance !== null && t.balance !== undefined && t.balance !== ''); },
+    get flagged() {
+      const s = new Set();
+      for (const c of this.validation.checks) if (c.status === 'fail') (c.rows || []).forEach(r => s.add(r));
+      return s;
+    },
+
+    async init() {
+      await this.load();
+      const t0 = Date.now();
+      this.timer = setInterval(async () => {
+        this.elapsed = Math.round((Date.now() - t0) / 1000);
+        if (['queued', 'parsing'].includes(this.job.status)) await this.load();
+      }, 1000);
+      window.addEventListener('beforeunload', e => { if (this.dirty) { e.preventDefault(); e.returnValue = ''; } });
+    },
+    async load() {
+      const r = await fetch(base + '/api/jobs/' + id);
+      this.job = await r.json();
+      document.title = this.job.filename + ' — Review';
+      if (this.job.result && !this.result) {
+        this.result = this.job.result;
+        const rv = this.job.review || {};
+        const copy = v => JSON.parse(JSON.stringify(v));  // reactive proxies can't be structuredClone'd
+        this.rows = copy(rv.transactions || this.result.transactions);
+        this.statement = copy(rv.statement || this.result.statement);
+        this.validation = rv.validation || this.result.validation;
+        this.resolved = rv.resolved_lines || [];
+        this.showChecks = this.validation.verdict !== 'verified';
+      }
+    },
+    verdictStyle() {
+      const v = this.validation.verdict;
+      return {
+        verified: {label: 'Verified — every row reconciles with the statement', box: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800'},
+        consistent: {label: 'Internally consistent — nothing printed to anchor it', box: 'bg-sky-50 border-sky-200', text: 'text-sky-800'},
+        needs_review: {label: 'Needs review', box: 'bg-amber-50 border-amber-200', text: 'text-amber-900'},
+        failed: {label: 'Could not read transactions', box: 'bg-red-50 border-red-200', text: 'text-red-800'},
+      }[v] || {label: v, box: 'bg-slate-50', text: ''};
+    },
+    fmt(n) { return Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); },
+    totals() {
+      let dr = 0, cr = 0;
+      for (const t of this.rows) { const a = parseFloat(t.amount); if (!isNaN(a)) { if (t.direction === 'debit') dr += a; else if (t.direction === 'credit') cr += a; } }
+      return {dr, cr};
+    },
+
+    // ---- selection & highlighting
+    select(rowId) {
+      this.selected = rowId;
+      const t = this.rows.find(r => r.id === rowId);
+      document.getElementById('row-' + rowId)?.scrollIntoView({block: 'nearest'});
+      if (!t?.source) return;
+      if (this.kind === 'pdf') {
+        const page = this.pages.find(p => p.number === t.source.page);
+        const el = document.getElementById('page-' + t.source.page);
+        if (page && el) {
+          const pane = this.$refs.preview;
+          const y = el.offsetTop + (t.source.bbox[1] / page.height) * el.offsetHeight - pane.clientHeight / 3;
+          pane.scrollTo({top: y, behavior: 'smooth'});
+        }
+      } else {
+        const ri = this.gridRowIndex(t);
+        document.getElementById('grid-' + ri)?.scrollIntoView({block: 'center', behavior: 'smooth'});
+      }
+    },
+    gridRowIndex(t) { return t?.source ? parseInt(t.source.line_ids[0].split('L')[1]) : -1; },
+    gridRowSelected(ri) { const t = this.rows.find(r => r.id === this.selected); return t && this.gridRowIndex(t) === ri; },
+    highlightsOn(p) {
+      const out = [];
+      const pad = 1.5;
+      for (const t of this.rows) {
+        if (!t.source || t.source.page !== p.number) continue;
+        const isSel = t.id === this.selected, isBad = this.flagged.has(t.id);
+        if (!isSel && !isBad) continue;
+        const [x0, y0, x1, y1] = t.source.bbox;
+        out.push({key: t.id, cls: isSel ? 'bg-indigo-500/20 ring-2 ring-indigo-500' : 'bg-red-500/15',
+                  x: (x0 - pad) / p.width * 100, y: (y0 - pad) / p.height * 100,
+                  w: (x1 - x0 + 2 * pad) / p.width * 100, h: (y1 - y0 + 2 * pad) / p.height * 100});
+      }
+      return out;
+    },
+
+    // ---- editing
+    edit(t) { t.edited = true; this.changed(); },
+    changed() { this.dirty = true; clearTimeout(this.vtimer); this.vtimer = setTimeout(() => this.revalidate(), 350); },
+    setAmount(t, dir, value) {
+      const v = value.replace(/,/g, '').trim();
+      if (v) { t.amount = v; t.direction = dir; }
+      else if (t.direction === dir) { t.amount = null; t.direction = null; }
+      this.edit(t);
+    },
+    insertAfter(i) {
+      const prev = this.rows[i] || {};
+      const nid = Math.max(0, ...this.rows.map(r => r.id)) + 1;
+      this.rows.splice(i + 1, 0, {id: nid, date: prev.date || null, description: '', amount: null, direction: null, balance: null, edited: true, source: null});
+      this.changed();
+    },
+    remove(i) { this.rows.splice(i, 1); this.changed(); },
+    resolveLine(lineId) { this.resolved.push(lineId); this.changed(); },
+    body() { return JSON.stringify({transactions: this.rows, statement: this.statement, resolved_lines: this.resolved}); },
+    async revalidate() {
+      const r = await fetch(base + '/api/jobs/' + id + '/validate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: this.body()});
+      if (r.ok) {
+        this.validation = await r.json();
+        if (this.validation.verdict !== 'verified') this.showChecks = true;
+      }
+    },
+    async save() {
+      const r = await fetch(base + '/api/jobs/' + id + '/review', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: this.body()});
+      if (r.ok) { this.validation = (await r.json()).validation; this.dirty = false; this.flash('Saved'); }
+    },
+    async approve() {
+      if (this.validation.verdict !== 'verified' && !confirm('This statement does not fully reconcile. Approve it anyway?')) return;
+      const r = await fetch(base + '/api/jobs/' + id + '/approve', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: this.body()});
+      if (r.ok) { this.dirty = false; this.job.status = 'approved'; this.flash('Approved'); }
+    },
+    async reject() {
+      const reason = prompt('Why is this parse wrong? (optional)');
+      if (reason === null) return;
+      const r = await fetch(base + '/api/jobs/' + id + '/reject', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason})});
+      if (r.ok) { this.dirty = false; this.job.status = 'rejected'; this.flash('Rejected'); }
+    },
+    async sendPassword() {
+      await fetch(base + '/api/jobs/' + id + '/password', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: this.password})});
+      this.password = ''; this.job.status = 'queued';
+    },
+    flash(msg) { this.toast = msg; setTimeout(() => this.toast = '', 1800); },
+  };
+}
+</script>
+</body>
+</html>

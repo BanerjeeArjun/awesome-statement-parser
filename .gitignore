@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+# never commit real statements or parser state
+corpus*/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+!tests/fixtures/*.csv
+.awesome-statement-parser/

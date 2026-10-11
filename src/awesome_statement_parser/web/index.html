@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Awesome Statement Parser</title>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen" x-data="home()" x-init="init()">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="font-semibold tracking-tight">Awesome Statement Parser</div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="inline-block w-2 h-2 rounded-full" :class="health.llm === 'ok' ? 'bg-emerald-500' : (health.llm ? 'bg-amber-500' : 'bg-slate-300')"></span>
+        <span class="text-slate-600" x-text="health.llm === 'ok' ? ('Local model: ' + health.model) : (health.llm ? 'Local model unavailable — only learned layouts will parse' : 'Checking local model…')"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+    <section class="bg-white rounded-xl border border-slate-200 p-6">
+      <h1 class="text-lg font-semibold">Parse a statement</h1>
+      <p class="text-sm text-slate-600 mt-1">Bank or credit card statement — PDF (password-protected is fine), CSV, XLS or XLSX. Nothing leaves this machine.</p>
+      <form class="mt-5 space-y-4" @submit.prevent="upload()">
+        <label class="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-10 cursor-pointer transition"
+               :class="dragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-slate-400'"
+               @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false"
+               @drop.prevent="dragging = false; file = $event.dataTransfer.files[0]">
+          <input type="file" class="sr-only" accept=".pdf,.csv,.xls,.xlsx" @change="file = $event.target.files[0]">
+          <span class="text-sm font-medium" x-text="file ? file.name : 'Drop a statement here, or click to choose'"></span>
+          <span class="text-xs text-slate-500" x-show="file" x-text="file ? (file.size / 1024).toFixed(0) + ' KB' : ''"></span>
+        </label>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input type="password" x-model="password" placeholder="Password (only if the file is protected)" autocomplete="off"
+                 class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <button type="submit" :disabled="!file || busy"
+                  class="rounded-lg bg-indigo-600 text-white px-5 py-2 text-sm font-medium disabled:opacity-40 hover:bg-indigo-700">
+            <span x-text="busy ? 'Uploading…' : 'Parse statement'"></span>
+          </button>
+        </div>
+        <p class="text-sm text-red-600" x-show="error" x-text="error"></p>
+      </form>
+    </section>
+
+    <section>
+      <h2 class="text-sm font-semibold text-slate-700 mb-3">Recent statements</h2>
+      <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs text-slate-500 border-b border-slate-200">
+            <tr><th class="px-4 py-2 font-medium">File</th><th class="px-4 py-2 font-medium">Bank</th><th class="px-4 py-2 font-medium">Period</th>
+                <th class="px-4 py-2 font-medium text-right">Rows</th><th class="px-4 py-2 font-medium">Check</th><th class="px-4 py-2 font-medium">Status</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="j in jobs" :key="j.id">
+              <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" @click="location.href = base + '/review/' + j.id">
+                <td class="px-4 py-2 font-medium truncate max-w-[16rem]" x-text="j.filename"></td>
+                <td class="px-4 py-2 text-slate-600" x-text="j.bank_name || '—'"></td>
+                <td class="px-4 py-2 text-slate-600 whitespace-nowrap" x-text="j.period_start ? (j.period_start + ' → ' + j.period_end) : '—'"></td>
+                <td class="px-4 py-2 text-right tabular-nums" x-text="j.transactions || '—'"></td>
+                <td class="px-4 py-2"><span class="text-xs px-2 py-0.5 rounded-full" :class="verdictClass(j.verdict)" x-text="j.verdict ? j.verdict.replace('_', ' ') : '—'"></span></td>
+                <td class="px-4 py-2 text-slate-600" x-text="j.status.replace('_', ' ')"></td>
+              </tr>
+            </template>
+            <tr x-show="!jobs.length"><td colspan="6" class="px-4 py-6 text-center text-slate-500">No statements yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+<script>
+function home() {
+  const base = location.pathname.replace(/\/$/, '');
+  return {
+    base, file: null, password: '', busy: false, error: '', dragging: false, jobs: [], health: {},
+    async init() {
+      fetch(base + '/api/health').then(r => r.json()).then(h => this.health = h).catch(() => this.health = {llm: 'unavailable'});
+      this.jobs = await (await fetch(base + '/api/jobs')).json();
+    },
+    async upload() {
+      this.busy = true; this.error = '';
+      const fd = new FormData();
+      fd.append('file', this.file);
+      if (this.password) fd.append('password', this.password);
+      try {
+        const r = await fetch(base + '/api/jobs', {method: 'POST', body: fd});
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        const j = await r.json();
+        location.href = base + '/review/' + j.id;
+      } catch (e) { this.error = e.message; this.busy = false; }
+    },
+    verdictClass(v) {
+      return {verified: 'bg-emerald-100 text-emerald-800', consistent: 'bg-sky-100 text-sky-800',
+              needs_review: 'bg-amber-100 text-amber-800', failed: 'bg-red-100 text-red-800'}[v] || 'bg-slate-100 text-slate-500';
+    },
+  };
+}
+</script>
+</body>
+</html>
