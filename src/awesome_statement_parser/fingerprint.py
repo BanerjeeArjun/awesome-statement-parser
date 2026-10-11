@@ -112,13 +112,21 @@ class LayoutCache:
             data = self._load()
             entries = data["layouts"].setdefault(key, [])
             payload = clean.to_dict()
+            def same(a: dict, b: dict) -> bool:  # column positions drift; compare everything else
+                strip = lambda d: {k: v for k, v in d.items() if k != "column_spans"}
+                return strip(a) == strip(b)
+
+            now = datetime.now(timezone.utc).isoformat()
             for e in entries:
-                if e["spec"] == payload:
+                if same(e["spec"], payload):
+                    e["spec"] = payload
                     e["uses"] = e.get("uses", 0) + 1
-                    e["last_used"] = datetime.now(timezone.utc).isoformat()
+                    e["last_used"] = now
                     break
             else:
-                entries.append({"spec": payload, "uses": 1, "created": datetime.now(timezone.utc).isoformat(), "last_used": datetime.now(timezone.utc).isoformat()})
+                entries.append({"spec": payload, "uses": 1, "created": now, "last_used": now})
+            entries.sort(key=lambda e: e.get("last_used", ""), reverse=True)
+            del entries[5:]
             self._save(data)
 
     def all(self) -> dict:

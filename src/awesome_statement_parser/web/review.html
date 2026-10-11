@@ -101,7 +101,7 @@
               <div><div class="text-slate-500">Bank</div><div class="font-medium" x-text="statement.bank_name || '—'"></div></div>
               <div><div class="text-slate-500">Type</div><div class="font-medium" x-text="statement.statement_type === 'credit_card' ? 'Credit card' : 'Bank account'"></div></div>
               <div><div class="text-slate-500">Account</div><div class="font-medium" x-text="statement.account_number || '—'"></div></div>
-              <div><div class="text-slate-500">Period</div><div class="font-medium" x-text="statement.period_start ? statement.period_start + ' → ' + statement.period_end : '—'"></div></div>
+              <div><div class="text-slate-500">Period</div><div class="font-medium" x-text="statement.period_start ? statement.period_start + ' → ' + (statement.period_end || '…') : '—'"></div></div>
               <template x-for="f in moneyFields" :key="f.key">
                 <label class="block"><span class="text-slate-500" x-text="f.label"></span>
                   <input class="cell num font-medium -mx-1" :value="statement[f.key] ?? ''" placeholder="—" @change="statement[f.key] = $event.target.value.trim() || null; changed()">

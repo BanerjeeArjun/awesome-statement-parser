@@ -473,17 +473,14 @@ def columns_from_data(doc: Document) -> list[tuple[tuple[float, float], str]]:
 
 
 def geometry_key(spec: LayoutSpec) -> Optional[str]:
-    """Cache key for a header-less layout: the role sequence and stable column anchors
-    (left edge of text/date columns, right edge of amount columns)."""
+    """Cache key for a header-less layout."""
     if not spec.column_spans:
         return None
     import hashlib
 
-    parts = []
-    for (x0, x1), role in zip(spec.column_spans, spec.roles()):
-        anchor = x1 if role in MONEY_ROLES else x0
-        parts.append(f"{role}@{int(round(anchor / 6.0))}")
-    return "geo-" + hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+    # Role sequence only: exact positions drift between statements of the same layout, and a
+    # collision between banks is harmless — every cached layout must still verify to be used.
+    return "geo-" + hashlib.sha1("|".join(spec.roles()).encode()).hexdigest()[:12]
 
 
 def find_headers(doc: Document, spec: LayoutSpec) -> list[HeaderHit]:
@@ -724,6 +721,11 @@ def apply_spec(doc: Document, spec: LayoutSpec) -> TableResult:
     from .models import ColumnSpec
 
     hits: list[HeaderHit] = [] if spec.column_spans else find_headers(doc, spec)
+    if spec.column_spans:
+        # replayed header-less layout: re-measure the columns on this statement when they agree
+        fresh = columns_from_data(doc)
+        if fresh and [r for _s, r in fresh] == spec.roles():
+            spec.column_spans = [span for span, _r in fresh]
     if not hits and not spec.column_spans:
         # no readable header (image/banner header, or none at all): columns from the rows
         derived = columns_from_data(doc)

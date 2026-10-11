@@ -201,3 +201,13 @@ async def test_headerless_table_parses_even_without_the_model(tmp_path, settings
     r = await parse_statement(data, m["file"], settings=settings)  # settings point at a dead LLM port
     assert r.status == "verified" and r.spec_source.startswith("columns_from_rows")
     assert_matches_truth(r, truth)
+
+
+async def test_headerless_layout_is_reused_from_cache(tmp_path, settings):
+    from awesome_statement_parser.synth import generate_corpus
+
+    ms = generate_corpus(tmp_path, per_profile=2, seed=12, profiles=["ashoka_v2"], password_rate=0)
+    first = await parse_statement((tmp_path / ms[0]["file"]).read_bytes(), ms[0]["file"], settings=settings)
+    assert first.status == "verified"
+    second = await parse_statement((tmp_path / ms[1]["file"]).read_bytes(), ms[1]["file"], settings=settings)
+    assert second.status == "verified" and second.spec_source == "cache"

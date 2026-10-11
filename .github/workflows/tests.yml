@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Unit and pipeline tests (no model needed)
+        run: pytest -m "not live_llm" -q
+      - name: Accuracy gate — zero silent errors on synthetic statements
+        run: |
+          asp synth /tmp/corpus --per-profile 3 --seed 101
+          asp eval /tmp/corpus --mode oracle --out /tmp/oracle.json
+          asp eval /tmp/corpus --mode noisy --out /tmp/noisy.json

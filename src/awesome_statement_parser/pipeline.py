@@ -48,13 +48,15 @@ def run_spec(doc: Document, spec: LayoutSpec, source: str) -> ParseResult:
 
     info, warnings, txns, report = evaluate(defaults=False)
     warnings = table.notes + warnings
-    if report.verdict != "verified":
-        # the spec may simply have missed a printed field: try the common labels, keep them only if they help
-        alt = evaluate(defaults=True)
-        if _RANK[alt[3].verdict] > _RANK[report.verdict]:
-            info, warnings, txns, report = alt
-            warnings = table.notes + warnings
-            warnings.append("Some statement totals were found by common labels the layout did not name.")
+    # The spec may have missed printed fields (closing balance, totals, counts): try the common
+    # labels too. Keep them when they don't make things worse — more printed numbers means
+    # more independent checks — and never when they introduce a failure.
+    alt = evaluate(defaults=True)
+    fails = lambda rep: sum(c.status == "fail" for c in rep.checks)
+    if (_RANK[alt[3].verdict], -fails(alt[3])) >= (_RANK[report.verdict], -fails(report)) and alt[0].provenance != info.provenance:
+        info, warnings, txns, report = alt
+        warnings = table.notes + warnings
+        warnings.append("Some statement totals were found by common labels the layout did not name.")
     fp = key_for_hit(doc, table.header_hits[0].line_ids) if table.header_hits else geometry_key(spec)
     if not table.header_hits and spec.column_spans:
         warnings.append("The table has no readable column header; columns were read from the rows themselves.")
@@ -74,6 +76,16 @@ def run_spec(doc: Document, spec: LayoutSpec, source: str) -> ParseResult:
         pages=[{"number": p.number, "width": p.width, "height": p.height} for p in doc.pages],
         document_kind=doc.kind,
     )
+
+
+def cacheable(r: ParseResult) -> LayoutSpec:
+    """The spec as worth remembering: only the summary labels that were actually found in this
+    statement (a label the model invented would make every later lookup miss)."""
+    from .models import FieldSpec
+
+    spec = copy.deepcopy(r.spec)
+    spec.fields = [FieldSpec(kind, p["label"]) for kind, p in r.statement.provenance.items() if isinstance(p, dict) and p.get("label")]
+    return spec
 
 
 def score(r: ParseResult) -> tuple:
@@ -138,7 +150,7 @@ async def parse_document(
         r.timings = {**r.timings, **timings}
         r.warnings = list(dict.fromkeys(r.warnings))
         if r.status == "verified" and r.fingerprint and r.spec and use_cache and r.spec_source != "cache":
-            cache.store(r.fingerprint, r.spec)
+            cache.store(r.fingerprint, cacheable(r))
         r.timings["attempts"] = [f"{a.spec_source}:{a.status}" for a in attempts]
         return r
 
