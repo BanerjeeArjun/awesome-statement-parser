@@ -18,11 +18,18 @@ and `LLMUnavailable` — the last only when the model server cannot be reached *
 statement could not be read without it (no learned layout, and columns could not be read
 from the rows).
 
+Account Aggregator export: `to_aa(result_or_dict, profile=None)` returns the ReBIT FI-data document,
+`aa_gaps(doc)` lists required fields still empty, `load_profile(path)` reads and validates a profile.
+`ProfileError` (bad profile) and `AAError` (rows that can't be exported) both derive from
+`ValueError`. See [account-aggregator.md](account-aggregator.md).
+
 `ParseResult` fields: `status`, `statement` (`StatementInfo`), `transactions`, `validation`
 (`ValidationReport` with `verdict`, `summary`, `checks`), `spec`, `fingerprint`, `spec_source`,
 `anchors`, `unaccounted`, `warnings`, `timings`, `pages`, `document_kind`.
 
 ## Result JSON
+
+(For the ReBIT Account Aggregator shape — `to_aa(result, profile)` — see [account-aggregator.md](account-aggregator.md).)
 
 `result_to_dict(result)` — the same shape the HTTP API returns. Money is always a string
 (`"1234.50"`), never a float; dates are ISO `YYYY-MM-DD`.
@@ -83,7 +90,7 @@ app.include_router(router, prefix="/statements")
 | `POST` | `/api/jobs/{id}/validate` | re-run the checks on edited rows without saving (`{"transactions": […], "statement": {…}, "resolved_lines": […]}`) |
 | `PUT` | `/api/jobs/{id}/review` | save edits |
 | `POST` | `/api/jobs/{id}/approve`, `/reject` | finish the review (`reject` takes `{"reason": "…"}`) |
-| `GET` | `/api/jobs/{id}/export.csv`, `/export.json` | the reviewed (or original) result |
+| `GET` | `/api/jobs/{id}/export.csv`, `/export.json` | the reviewed (or original) result; `export.json?format=aa` gives the [ReBIT Account Aggregator](account-aggregator.md) document |
 | `GET` | `/api/layouts` | learned layouts |
 | `GET` | `/api/health` | version and model availability |
 | `DELETE` | `/api/jobs/{id}` | delete a job and its files |

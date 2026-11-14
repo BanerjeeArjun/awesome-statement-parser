@@ -49,6 +49,15 @@ needs a sentence in the PR on why it cannot let a wrong parse through. The `colu
 and `statement_type` checks guard a case pure arithmetic cannot see (see
 [docs/how-it-works.md](docs/how-it-works.md#verification)) — please do not remove them.
 
+## Changing the Account Aggregator export
+
+`src/awesome_statement_parser/aa.py` follows ReBIT's XSDs (see
+[docs/account-aggregator.md](docs/account-aggregator.md)). Two rules: a field the statement
+doesn't print stays `""` unless the caller's profile supplies it — no defaults or guesses — and
+the required-key sets in `tests/test_aa.py` must match the XSDs. If you change the mapping, convert
+the output back to XML and validate it against the published XSDs, as described in the guide, and
+say so in the PR. Never put a real PAN, number or statement in a test or an example.
+
 ## Style
 
 Plain Python 3.11+, standard library first, type hints where they help, comments that explain

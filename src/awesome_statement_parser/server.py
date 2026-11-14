@@ -15,11 +15,12 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from . import __version__
+from .aa import AAError, ProfileError, load_profile, to_aa
 from .config import get_settings
 from .errors import LLMUnavailable, ParserError, PasswordRequired, ScannedDocument, UnsupportedFormat
 from .extract import GRID_W, extract
@@ -287,12 +288,26 @@ async def reject(job_id: str, body: RejectBody):
 
 
 @router.get("/api/jobs/{job_id}/export.{fmt}")
-async def export(job_id: str, fmt: str):
+async def export(job_id: str, fmt: str, style: str = Query("native", alias="format", description="native | aa (ReBIT Account Aggregator; json only)")):
     job = _job_or_404(job_id)
-    src = job.get("review") or job.get("result")
+    if style not in ("native", "aa"):
+        raise HTTPException(400, "format must be native or aa")
+    if style == "aa" and fmt != "json":
+        raise HTTPException(400, "format=aa is only available as export.json")
+    # A rejected job that was never saved has a review with no rows in it: fall back to the parse result.
+    review = job.get("review")
+    src = review if review and review.get("statement") else job.get("result")
     if not src:
         raise HTTPException(409, "Nothing to export")
     stem = Path(job["filename"]).stem
+    if style == "aa":
+        try:
+            doc = to_aa(src, load_profile(settings.aa_profile) if settings.aa_profile else None)
+        except ProfileError as e:
+            raise HTTPException(500, f"Account Aggregator profile ({settings.aa_profile}): {e}")
+        except AAError as e:
+            raise HTTPException(422, str(e))
+        return JSONResponse(doc, headers={"Content-Disposition": f'attachment; filename="{stem}.aa.json"'})
     if fmt == "json":
         payload = {"statement": src["statement"], "transactions": src["transactions"], "validation": src.get("validation"), "status": job["status"]}
         return JSONResponse(payload, headers={"Content-Disposition": f'attachment; filename="{stem}.json"'})

@@ -33,6 +33,7 @@ financial history to someone else. This project does neither:
 - A review UI: the document on the left (click a row to highlight it), the parsed statement on
   the right; edit, add or delete rows and the checks re-run live; approve, reject, export CSV/JSON
 - CLI, Python library, JSON API, and a FastAPI router you can mount inside your own app
+- Export as a **ReBIT Account Aggregator** FI-data document (`deposit` / `credit_card`): `asp parse --aa` — see [docs/account-aggregator.md](docs/account-aggregator.md)
 - A synthetic statement generator with exact ground truth, and an evaluation harness
 
 ## Quick start
@@ -159,6 +160,28 @@ app.include_router(router, prefix="/statements")
 
 API reference and the result format: [docs/api.md](docs/api.md).
 
+## Account Aggregator (ReBIT) export
+
+The same verified rows can be exported in the shape of ReBIT's Account Aggregator FI-data
+schemas — `deposit` for bank accounts, `credit_card` for cards:
+
+```bash
+asp parse statement.pdf --aa > account.json
+asp parse statement.pdf --aa --profile aa-profile.json > account.json   # fill in holder details you know
+```
+
+```python
+from awesome_statement_parser import to_aa, aa_gaps, load_profile
+doc = to_aa(result, load_profile("aa-profile.json"))   # profile optional
+aa_gaps(doc)                                           # required fields still empty
+```
+
+Statements don't carry most of what the schema requires (holder DOB, PAN, IFSC, …). Those
+keys are always present but left `""` unless you supply them in a profile — nothing is guessed.
+Amounts stay exact decimal strings. The export does not carry the parser's verified/needs-review
+verdict, so check `result.status` first. This is an independent implementation, not certified by
+ReBIT or Sahamati. Mapping, profile format and known limits: [docs/account-aggregator.md](docs/account-aggregator.md).
+
 ## Configuration
 
 Environment variables, all optional:
@@ -171,12 +194,16 @@ Environment variables, all optional:
 | `ASP_TIME_BUDGET` | `60` | whole-parse budget; the repair question is skipped beyond it |
 | `ASP_DATA_DIR` | `~/.awesome-statement-parser` | learned layouts and review jobs |
 | `ASP_USE_CACHE` | `1` | `0` to always ask the model |
+| `ASP_AA_PROFILE` | none | JSON profile (holder PAN/DOB, IFSC, …) applied to Account Aggregator exports from the server |
 
 ## Privacy
 
 - No network calls except to the model server you configure (local by default).
 - Uploaded files, page images and results stay in `ASP_DATA_DIR` on your disk.
 - Passwords are used in memory only and never written anywhere.
+- An Account Aggregator profile file holds personal data (PAN, date of birth, mobile). Keep it
+  out of git — `aa-profile*.json` is already in `.gitignore`. Exported documents contain only the
+  last four characters of account and card numbers.
 - The UI loads Tailwind and Alpine.js from public CDNs; no statement data is sent with those requests.
 
 **Reporting a statement that fails:** never attach a real statement to an issue. Run

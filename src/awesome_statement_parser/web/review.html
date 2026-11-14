@@ -26,6 +26,7 @@
         <span class="text-xs text-slate-500 mr-2" x-show="dirty">Unsaved edits</span>
         <a class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" :href="base + '/api/jobs/' + id + '/export.csv'">CSV</a>
         <a class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" :href="base + '/api/jobs/' + id + '/export.json'">JSON</a>
+        <a class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" title="ReBIT Account Aggregator FI-data format" :href="base + '/api/jobs/' + id + '/export.json?format=aa'">AA JSON</a>
         <button class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50" @click="save()" :disabled="!dirty">Save</button>
         <button class="text-sm px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50" @click="reject()">Reject</button>
         <button class="text-sm px-4 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700" @click="approve()">Approve</button>

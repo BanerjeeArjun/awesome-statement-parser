@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- ReBIT Account Aggregator export: `to_aa()`, `asp parse --aa [--profile FILE]`, `export.json?format=aa`
+  and an **AA JSON** button in the review UI. Bank accounts map to the `deposit` FI type, cards to
+  `credit_card`; fields a statement can't supply are `""` or come from an optional profile.
+  See [docs/account-aggregator.md](docs/account-aggregator.md).
+
 ## 0.1.0 — first public release
 
 - Universal parsing of bank and credit card statements (PDF incl. password-protected, CSV,

@@ -9,10 +9,30 @@ import sys
 from pathlib import Path
 
 
+def _write_csv(path: str, d: dict, log=None) -> None:
+    import csv
+
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "description", "debit", "credit", "balance"])
+        for t in d["transactions"]:
+            w.writerow([t["date"], t["description"], t["amount"] if t["direction"] == "debit" else "",
+                        t["amount"] if t["direction"] == "credit" else "", t.get("balance") or ""])
+    print(f"  wrote {path}", file=log or sys.stdout)
+
+
 def _parse(args) -> int:
+    from .aa import AAError, aa_gaps, load_profile, to_aa
     from .errors import ParserError, PasswordRequired
     from .pipeline import parse_statement
     from .serialize import result_to_dict
+
+    # A bad profile should fail before the (slow, model-backed) parse, not after it.
+    try:
+        profile = load_profile(args.profile) if args.profile else None
+    except AAError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
 
     data = Path(args.file).read_bytes()
     password = args.password
@@ -29,9 +49,26 @@ def _parse(args) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 2
     d = result_to_dict(r)
+    code = 0 if r.status in ("verified", "consistent") else 1
+    if args.aa:
+        try:
+            doc = to_aa(d, profile)
+        except AAError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(json.dumps(doc, indent=1))
+        gaps = aa_gaps(doc)
+        if gaps:
+            print(f"note: {len(gaps)} required ReBIT field(s) have no value on the statement and are \"\" "
+                  f"(supply them with --profile):\n  " + "\n  ".join(gaps), file=sys.stderr)
+        if args.csv:
+            _write_csv(args.csv, d, log=sys.stderr)
+        return code
     if args.json:
         print(json.dumps(d, indent=1))
-        return 0 if r.status in ("verified", "consistent") else 1
+        if args.csv:
+            _write_csv(args.csv, d, log=sys.stderr)
+        return code
     st = d["statement"]
     print(f"{Path(args.file).name}: {r.status.upper()}  ({len(r.transactions)} rows, {d['timings'].get('total')}s, layout: {r.spec_source})")
     print(f"  {st.get('bank_name') or '?'} · {st['statement_type']} · {st.get('period_start')} → {st.get('period_end')}")
@@ -40,16 +77,8 @@ def _parse(args) -> int:
         if c.status != "skip":
             print(f"  [{c.status:4}] {c.name}: {c.message}")
     if args.csv:
-        import csv
-
-        with open(args.csv, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["date", "description", "debit", "credit", "balance"])
-            for t in d["transactions"]:
-                w.writerow([t["date"], t["description"], t["amount"] if t["direction"] == "debit" else "",
-                            t["amount"] if t["direction"] == "credit" else "", t.get("balance") or ""])
-        print(f"  wrote {args.csv}")
-    return 0 if r.status in ("verified", "consistent") else 1
+        _write_csv(args.csv, d)
+    return code
 
 
 def _serve(args) -> int:
@@ -114,7 +143,11 @@ def main(argv=None) -> int:
     a = sub.add_parser("parse", help="parse one statement file")
     a.add_argument("file")
     a.add_argument("-p", "--password")
-    a.add_argument("--json", action="store_true", help="print the full JSON result")
+    fmt = a.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true", help="print the full JSON result")
+    fmt.add_argument("--aa", action="store_true",
+                     help="print the result as a ReBIT Account Aggregator FI-data document (deposit / credit_card)")
+    a.add_argument("--profile", help="JSON file with holder/account details for --aa (see docs/account-aggregator.md)")
     a.add_argument("--csv", help="also write transactions to this CSV file")
     a.add_argument("--no-cache", action="store_true", help="ignore learned layouts (always ask the model)")
     a.set_defaults(fn=_parse)
@@ -147,6 +180,8 @@ def main(argv=None) -> int:
     a.set_defaults(fn=_layouts)
 
     args = p.parse_args(argv)
+    if args.cmd == "parse" and args.profile and not args.aa:
+        p.error("--profile only applies together with --aa")
     return args.fn(args)
 
 

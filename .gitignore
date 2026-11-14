@@ -13,3 +13,6 @@ corpus*/
 *.csv
 !tests/fixtures/*.csv
 .awesome-statement-parser/
+# Account Aggregator profiles hold personal data (PAN, DOB, mobile): never commit a real one
+aa-profile*.json
+!aa-profile*.example.json

@@ -20,6 +20,8 @@ class Settings:
     time_budget_s: float = field(default_factory=lambda: float(_env("TIME_BUDGET", "60")))
     data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", str(Path.home() / ".awesome-statement-parser"))).expanduser())
     use_cache: bool = field(default_factory=lambda: _env("USE_CACHE", "1") != "0")
+    # Optional JSON file with what statements don't carry (holder PAN/DOB, IFSC, ...) for AA export.
+    aa_profile: str = field(default_factory=lambda: _env("AA_PROFILE", "") or "")
 
     @property
     def layouts_path(self) -> Path:

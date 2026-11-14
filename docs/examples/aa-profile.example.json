@@ -1,0 +1,25 @@
+{
+  "account": { "linkedAccRef": "your-reference-for-this-account" },
+  "holders": [
+    {
+      "name": "A. Example",
+      "dob": "1990-01-31",
+      "mobile": "919999999999",
+      "nominee": "REGISTERED",
+      "email": "a.example@example.com",
+      "pan": "ABCDE1234F",
+      "ckycCompliance": true
+    }
+  ],
+  "summary": {
+    "type": "SAVINGS",
+    "status": "ACTIVE",
+    "branch": "Example Branch",
+    "ifscCode": "EXMP0001234",
+    "micrCode": "000000000",
+    "openingDate": "2015-04-01",
+    "facility": "OD",
+    "currentODLimit": "0",
+    "drawingLimit": "0"
+  }
+}
